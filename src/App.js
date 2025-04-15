@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import FileUpload from './components/FileUpload';
-const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 import './App.css';
-
+const API_KEY = process.env.REACT_APP_OPENAI_API_KEY;
 const App = () => {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
