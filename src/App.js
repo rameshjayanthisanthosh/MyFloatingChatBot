@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import FileUpload from './components/FileUpload';
 import './App.css';
-const API_KEY = process.env.REACT_APP_OPENAI_API_KEY;
+import axios from 'axios'; // using axios for cleaner requests
+
 const App = () => {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
@@ -14,29 +15,21 @@ const App = () => {
     setMessages((prev) => [...prev, userMessage]);
 
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "mistralai/mistral-7b-instruct",
-          messages: [
-            { role: "system", content: "You are a helpful assistant." },
-            { role: "user", content: `${question}\n\nContext:\n${fileContent}` },
-          ],
-        }),
+      const response = await axios.post('http://localhost:5000/api/chat', {
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: `${question}\n\nContext:\n${fileContent}` },
+        ],
+        model: 'openchat/openchat-7b:free',
       });
 
-      const data = await res.json();
-      const botReply = data.choices?.[0]?.message?.content || "Sorry, I couldn't respond.";
-
+      const botReply = response.data.choices?.[0]?.message?.content || "Sorry, I couldn't respond.";
       const botMessage = { sender: 'Bot', text: botReply };
       setMessages((prev) => [...prev, botMessage]);
       setQuestion('');
     } catch (error) {
-      const botMessage = { sender: 'Bot', text: "Sorry, I couldn't respond." };
+      console.error(error);
+      const botMessage = { sender: 'Bot', text: "Sorry, something went wrong." };
       setMessages((prev) => [...prev, botMessage]);
     }
   };
