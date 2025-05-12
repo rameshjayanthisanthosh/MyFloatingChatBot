@@ -1,88 +1,175 @@
-import React, { useState } from 'react';
-import FileUpload from './components/FileUpload';
+import React, { useState, useEffect } from 'react';
 import './App.css';
-import axios from 'axios'; // using axios for cleaner requests
 
 const App = () => {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
-  const [role, setRole] = useState('User');
   const [chatVisible, setChatVisible] = useState(false);
-  const [fileContent, setFileContent] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Auto-scroll
+  useEffect(() => {
+    const chatBody = document.querySelector('.chat-messages');
+    if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+  }, [messages]);
+
+  // Load chat from localStorage
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('chatMessages');
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+    }
+  }, []);
+
+  // Save chat to localStorage
+  useEffect(() => {
+    localStorage.setItem('chatMessages', JSON.stringify(messages));
+  }, [messages]);
 
   const askQuestion = async (question) => {
-    const userMessage = { sender: 'User', text: question };
+    if (!question.trim()) return;
+
+    const userMessage = {
+      sender: 'User',
+      text: question,
+      timestamp: new Date().toLocaleTimeString()
+    };
     setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/chat', {
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant.' },
-          { role: 'user', content: `${question}\n\nContext:\n${fileContent}` },
-        ],
-        model: 'openchat/openchat-7b:free',
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: "You are a helpful assistant." },
+            { role: "user", content: question },
+          ],
+        }),
       });
 
-      const botReply = response.data.choices?.[0]?.message?.content || "Sorry, I couldn't respond.";
-      const botMessage = { sender: 'Bot', text: botReply };
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      const botReply = data.choices?.[0]?.message?.content || "Sorry, I couldn't process your request.";
+
+      const botMessage = {
+        sender: 'Bot',
+        text: botReply,
+        timestamp: new Date().toLocaleTimeString()
+      };
       setMessages((prev) => [...prev, botMessage]);
       setQuestion('');
     } catch (error) {
-      console.error(error);
-      const botMessage = { sender: 'Bot', text: "Sorry, something went wrong." };
-      setMessages((prev) => [...prev, botMessage]);
+      console.error('Error:', error);
+      setError(error.message);
+      setMessages((prev) => [...prev, {
+        sender: 'Bot',
+        text: "Sorry, I encountered an error. Please try again.",
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const clearChat = () => setMessages([]);
+  const clearChat = () => {
+    setMessages([]);
+    localStorage.removeItem('chatMessages');
+  };
 
   return (
-    <>
-      <button className="chat-toggle" onClick={() => setChatVisible(!chatVisible)}>
-        💬
+    <div className="app-container">
+      <button 
+        className="chat-toggle"
+        onClick={() => setChatVisible(!chatVisible)}
+        aria-label={chatVisible ? "Close chat" : "Open chat"}
+      >
+        {chatVisible ? '✖' : '💬'}
       </button>
 
       {chatVisible && (
         <div className="chat-box">
           <div className="chat-header">
-            Chatbot
-            <button onClick={() => setChatVisible(false)}>✖</button>
+            <h2>AI Assistant</h2>
+            <button 
+              onClick={() => setChatVisible(false)}
+              className="close-btn"
+              aria-label="Close chat"
+            >
+              ✖
+            </button>
           </div>
 
           <div className="chat-body">
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="Admin">Admin</option>
-              <option value="User">User</option>
-            </select>
-
-            {role === 'Admin' && <FileUpload onFileContentExtracted={setFileContent} />}
-
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`chat-msg ${msg.sender.toLowerCase()}`}>
-                <strong>{msg.sender}:</strong> {msg.text}
-              </div>
-            ))}
+            <div className="chat-messages">
+              {messages.length === 0 ? (
+                <div className="welcome-message">
+                  <p>Welcome! Ask me anything.</p>
+                </div>
+              ) : (
+                messages.map((msg, i) => (
+                  <div key={i} className={`chat-msg ${msg.sender.toLowerCase()}-msg`}>
+                    <div className="msg-header">
+                      <strong>{msg.sender}:</strong>
+                      <span className="msg-time">{msg.timestamp}</span>
+                    </div>
+                    <div className="msg-text">{msg.text}</div>
+                  </div>
+                ))
+              )}
+              {isLoading && (
+                <div className="chat-msg bot-msg">
+                  <div className="msg-header">
+                    <strong>Bot:</strong>
+                  </div>
+                  <div className="msg-text typing-indicator">
+                    <span>•</span><span>•</span><span>•</span>
+                  </div>
+                </div>
+              )}
+              {error && (
+                <div className="error-message">
+                  Error: {error}
+                </div>
+              )}
+            </div>
           </div>
 
-          {role === 'User' && (
-            <div className="chat-input">
-              <input
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && askQuestion(question)}
-                placeholder="Ask a question..."
-              />
-              <button onClick={() => askQuestion(question)}>Send</button>
-            </div>
-          )}
+          <div className="chat-input">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Ask a question..."
+              onKeyDown={(e) => e.key === 'Enter' && !isLoading && askQuestion(question)}
+              disabled={isLoading}
+            />
+            <button 
+              onClick={() => !isLoading && askQuestion(question)}
+              disabled={isLoading || !question.trim()}
+            >
+              {isLoading ? '...' : 'Send'}
+            </button>
+          </div>
 
           {messages.length > 0 && (
-            <button className="clear-btn" onClick={clearChat}>Clear Chat</button>
+            <button className="clear-btn" onClick={clearChat}>
+              Clear Chat History
+            </button>
           )}
         </div>
       )}
-    </>
+    </div>
   );
 };
 
